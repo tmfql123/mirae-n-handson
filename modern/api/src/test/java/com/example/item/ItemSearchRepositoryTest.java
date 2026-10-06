@@ -96,6 +96,15 @@ class ItemSearchRepositoryTest {
         assertThat(itemSearchRepository.findPage(criteria)).isEmpty();
     }
 
+    @Test
+    @DisplayName("OFFSET 은 바인딩한 값만큼 건너뛰고 LIMIT 안의 나머지 행을 반환한다")
+    void bindsOffsetValue() {
+        ItemSearchCriteria criteria = new ItemSearchCriteria(null, null, null, null, "level DESC, id ASC", 2, 5);
+
+        assertThat(itemSearchRepository.findPage(criteria)).extracting(ItemSearchRow::id)
+            .containsExactly(12, 13, 14, 15, 16, 6, 7, 8, 9, 10, 1, 2, 3, 4, 5);
+    }
+
     private static ItemSearchCriteria criteria(String... namesAndValues) {
         LinkedMultiValueMap<String, String> params = new LinkedMultiValueMap<>();
         for (int index = 0; index < namesAndValues.length; index += 2) {

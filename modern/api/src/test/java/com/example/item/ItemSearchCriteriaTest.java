@@ -1,6 +1,7 @@
 package com.example.item;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
@@ -82,6 +83,80 @@ class ItemSearchCriteriaTest {
         params.add("tag", "도형");
 
         assertThat(ItemSearchCriteria.from(params).tag()).isEqualTo("도형");
+    }
+
+    @Test
+    @DisplayName("배열 키 다음에 평문 키가 오면 평문 값을 쓴다")
+    void usesPlainValueWhenPlainKeyComesAfterArrayKey() {
+        LinkedMultiValueMap<String, String> params = new LinkedMultiValueMap<>();
+        params.add("tag[]", "a");
+        params.add("tag", "b");
+
+        assertThat(ItemSearchCriteria.from(params).tag()).isEqualTo("b");
+    }
+
+    @Test
+    @DisplayName("평문 키 다음에 배열 키가 오면 배열 값을 쓴다")
+    void usesArrayValueWhenArrayKeyComesAfterPlainKey() {
+        LinkedMultiValueMap<String, String> params = new LinkedMultiValueMap<>();
+        params.add("tag", "b");
+        params.add("tag[]", "a");
+
+        assertThat(ItemSearchCriteria.from(params).tag()).isEqualTo("a");
+    }
+
+    @Test
+    @DisplayName("같은 인덱스 배열 키가 반복되면 마지막 값으로 덮어쓴다")
+    void overwritesSameIndexedArrayKey() {
+        LinkedMultiValueMap<String, String> params = new LinkedMultiValueMap<>();
+        params.add("tag[x]", "a");
+        params.add("tag[x]", "b");
+
+        assertThat(ItemSearchCriteria.from(params).tag()).isEqualTo("b");
+    }
+
+    @Test
+    @DisplayName("빈 인덱스 배열 키가 먼저 나오면 인덱스 키보다 그 첫 값을 쓴다")
+    void usesFirstAppendedArrayValueBeforeIndexedKey() {
+        LinkedMultiValueMap<String, String> params = new LinkedMultiValueMap<>();
+        params.add("tag[]", "a");
+        params.add("tag[x]", "b");
+
+        assertThat(ItemSearchCriteria.from(params).tag()).isEqualTo("a");
+    }
+
+    @Test
+    @DisplayName("인덱스 키가 섞여도 첫 칸은 처음 나온 인덱스의 마지막 값이다")
+    void usesLastValueOfFirstIndexedKey() {
+        LinkedMultiValueMap<String, String> params = new LinkedMultiValueMap<>();
+        params.add("tag[x]", "a");
+        params.add("tag[y]", "b");
+        params.add("tag[x]", "c");
+
+        assertThat(ItemSearchCriteria.from(params).tag()).isEqualTo("c");
+    }
+
+    @Test
+    @DisplayName("화이트리스트 밖의 정렬 조건은 생성 단계에서 거부한다")
+    void rejectsOrderByOutsideWhitelist() {
+        assertThatThrownBy(() -> new ItemSearchCriteria(null, null, null, null, "id; DROP TABLE item", 1, 0))
+            .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ItemSearchCriteria(null, null, null, null, "id", 1, 0))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("정렬 조건이 null 이면 생성 단계에서 거부한다")
+    void rejectsNullOrderBy() {
+        assertThatThrownBy(() -> new ItemSearchCriteria(null, null, null, null, null, 1, 0))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("음수 offset 은 생성 단계에서 거부한다")
+    void rejectsNegativeOffset() {
+        assertThatThrownBy(() -> new ItemSearchCriteria(null, null, null, null, "id ASC", 1, -1))
+            .isInstanceOf(IllegalArgumentException.class);
     }
 
     @ParameterizedTest(name = "sort={0}, dir={1}")

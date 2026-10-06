@@ -30,10 +30,14 @@ public class ItemSearchRepository {
 
     public List<ItemSearchRow> findPage(ItemSearchCriteria criteria) {
         QueryParts query = queryParts(criteria);
+        // ORDER BY 는 바인딩할 수 없다. orderBy 는 ItemSearchCriteria 가 화이트리스트로 검증한 조각만 들어온다.
         String sql = "SELECT id, title, unit_code, level, tag_names" + FROM + query.where()
             + " ORDER BY " + criteria.orderBy()
-            + " LIMIT " + ItemSearchCriteria.PAGE_SIZE + " OFFSET " + criteria.offset();
-        return jdbcTemplate.query(sql, query.parameters(), (resultSet, rowNumber) -> {
+            + " LIMIT :limit OFFSET :offset";
+        MapSqlParameterSource parameters = query.parameters()
+            .addValue("limit", ItemSearchCriteria.PAGE_SIZE)
+            .addValue("offset", criteria.offset());
+        return jdbcTemplate.query(sql, parameters, (resultSet, rowNumber) -> {
             String tagNames = resultSet.getString("tag_names");
             List<String> tags = tagNames == null ? List.of() : Arrays.asList(tagNames.split(",", -1));
             return new ItemSearchRow(

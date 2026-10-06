@@ -3,6 +3,7 @@ package com.example.item;
 import java.math.BigInteger;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.util.MultiValueMap;
@@ -23,10 +24,27 @@ public record ItemSearchCriteria(
 
     public static final int PAGE_SIZE = 20;
 
+    /** Repository 가 ORDER BY 에 그대로 붙이는 조각이라, 이 목록 밖의 값은 생성 단계에서 거부한다. */
+    private static final Set<String> ORDER_BY_WHITELIST = Set.of(
+        "id ASC", "id DESC",
+        "title ASC, id ASC", "title DESC, id ASC",
+        "unit_code ASC, level DESC, id ASC", "unit_code DESC, level DESC, id ASC",
+        "level ASC, id ASC", "level DESC, id ASC",
+        "created_at ASC, id ASC", "created_at DESC, id ASC");
+
     private static final Pattern PHP_NUMBER_PREFIX = Pattern.compile(
         "[ \\t\\n\\r\\u000B\\f]*([+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?)");
     private static final Pattern INTEGER_NUMBER = Pattern.compile("[+-]?[0-9]+");
     private static final Pattern PAGE_NUMBER = Pattern.compile("[0-9]+\\n?");
+
+    public ItemSearchCriteria {
+        if (orderBy == null || !ORDER_BY_WHITELIST.contains(orderBy)) {
+            throw new IllegalArgumentException("허용되지 않은 정렬 조건입니다: " + orderBy);
+        }
+        if (offset < 0) {
+            throw new IllegalArgumentException("offset 은 0 이상이어야 합니다: " + offset);
+        }
+    }
 
     public static ItemSearchCriteria from(MultiValueMap<String, String> params) {
         String keyword = phpTrim(parameter(params, "q", ""));
@@ -61,20 +79,48 @@ public record ItemSearchCriteria(
         return new ItemSearchCriteria(keyword, unit, level, tag, orderBy, page, (page - 1) * PAGE_SIZE);
     }
 
+    /**
+     * PHP {@code $_GET} 처럼 평문 키와 배열 키({@code name[...]}) 중 나중에 나온 형태를 쓴다.
+     * 평문이 이기면 마지막 값, 배열이 이기면 첫 값({@code reset()})이다.
+     * 키 순서는 각 키가 처음 나온 순서라서, 두 형태가 번갈아 섞인 요청까지 PHP 와 같지는 않다.
+     */
     private static String parameter(MultiValueMap<String, String> params, String name, String defaultValue) {
+        List<String> arrayValues = null;
+        List<String> plainValues = null;
+        boolean plainLast = false;
         for (Map.Entry<String, List<String>> entry : params.entrySet()) {
             String key = entry.getKey();
-            if (key.startsWith(name + "[") && key.endsWith("]")) {
-                return firstOrEmpty(entry.getValue());
+            if (key.equals(name)) {
+                plainValues = entry.getValue();
+                arrayValues = null;
+                plainLast = true;
+            } else if (key.startsWith(name + "[") && key.endsWith("]")) {
+                if (arrayValues == null) {
+                    arrayValues = key.equals(name + "[]")
+                        ? entry.getValue()
+                        : lastOnly(entry.getValue());
+                }
+                plainLast = false;
             }
         }
 
-        List<String> values = params.get(name);
-        if (values == null || values.isEmpty()) {
+        if (arrayValues != null && !plainLast) {
+            return firstOrEmpty(arrayValues);
+        }
+        if (plainValues == null || plainValues.isEmpty()) {
             return defaultValue;
         }
-        String value = values.get(values.size() - 1);
+        String value = plainValues.get(plainValues.size() - 1);
         return value == null ? "" : value;
+    }
+
+    /** {@code name[k]} 처럼 인덱스가 있는 키는 PHP 에서 같은 칸을 덮어쓰므로 마지막 값만 남는다. */
+    private static List<String> lastOnly(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return values;
+        }
+        String last = values.getLast();
+        return List.of(last == null ? "" : last);
     }
 
     private static String firstOrEmpty(List<String> values) {
